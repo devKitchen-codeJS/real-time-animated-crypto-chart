@@ -1,0 +1,53 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #060608;
+  --surface: #0d0d12;
+  --border: #1a1a24;
+  --accent: #f0b90b;
+  --green: #00c896;
+  --red: #ff4d4d;
+  --muted: #4a4a5a;
+  --text: #e8e8f0;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: var(--surface);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+
+/* Chart container — remove default canvas outline */
+canvas {
+  outline: none !important;
+}
+
+/* Lightweight charts tooltip */
+.tv-lightweight-charts {
+  font-family: 'JetBrains Mono', monospace !important;
+}
