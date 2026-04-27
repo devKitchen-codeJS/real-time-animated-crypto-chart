@@ -3,12 +3,15 @@
 import { useEffect, useRef, useCallback } from "react";
 import {
   createChart,
-  IChartApi,
-  ISeriesApi,
+  CandlestickSeries,
+  LineSeries,
   ColorType,
   CrosshairMode,
   LineStyle,
   PriceScaleMode,
+  type IChartApi,
+  type ISeriesApi,
+  type Time,
 } from "lightweight-charts";
 import { KlineData } from "@/types";
 import { SmoothedKline } from "@/hooks/useBinanceWebSocket";
@@ -24,22 +27,16 @@ function computePriceRange(
   currentPrice: number | null
 ): { min: number; max: number } | null {
   if (klines.length === 0) return null;
-
   const rawMin = Math.min(...klines.map((k) => k.low));
   const rawMax = Math.max(...klines.map((k) => k.high));
   const span = rawMax - rawMin || 1;
-
   const padding = span * 0.08;
   let visMin = rawMin - padding;
   let visMax = rawMax + padding;
-
   if (currentPrice !== null) {
-    const topThreshold = visMax - span * 0.15;
-    if (currentPrice >= topThreshold) visMax += span * 0.3;
-    const botThreshold = visMin + span * 0.15;
-    if (currentPrice <= botThreshold) visMin -= span * 0.3;
+    if (currentPrice >= visMax - span * 0.15) visMax += span * 0.3;
+    if (currentPrice <= visMin + span * 0.15) visMin -= span * 0.3;
   }
-
   return { min: visMin, max: visMax };
 }
 
@@ -50,7 +47,6 @@ export default function CryptoChart({ klines, latestKline, currentPrice }: Chart
   const lineSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const userZoomedRef = useRef(false);
 
-  // Initialize chart
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -96,7 +92,8 @@ export default function CryptoChart({ klines, latestKline, currentPrice }: Chart
       height: containerRef.current.clientHeight,
     });
 
-    const candleSeries = chart.addCandlestickSeries({
+    // v5 API: addSeries(SeriesDefinition, options)
+    const candleSeries = chart.addSeries(CandlestickSeries, {
       upColor: "#00c896",
       downColor: "#ff4d4d",
       borderUpColor: "#00c896",
@@ -105,8 +102,7 @@ export default function CryptoChart({ klines, latestKline, currentPrice }: Chart
       wickDownColor: "#ff4d4d",
     });
 
-    // Smooth line overlay — this is the animated moving dot
-    const lineSeries = chart.addLineSeries({
+    const lineSeries = chart.addSeries(LineSeries, {
       color: "#f0b90b",
       lineWidth: 2,
       crosshairMarkerVisible: true,
@@ -146,13 +142,11 @@ export default function CryptoChart({ klines, latestKline, currentPrice }: Chart
   // Load historical data
   useEffect(() => {
     if (!candleSeriesRef.current || !lineSeriesRef.current || klines.length === 0) return;
-
     const sorted = [...klines].sort((a, b) => a.time - b.time);
-    type LWTime = import("lightweight-charts").Time;
 
     candleSeriesRef.current.setData(
       sorted.map((k) => ({
-        time: k.time as unknown as LWTime,
+        time: k.time as Time,
         open: k.open,
         high: k.high,
         low: k.low,
@@ -161,10 +155,7 @@ export default function CryptoChart({ klines, latestKline, currentPrice }: Chart
     );
 
     lineSeriesRef.current.setData(
-      sorted.map((k) => ({
-        time: k.time as unknown as LWTime,
-        value: k.close,
-      }))
+      sorted.map((k) => ({ time: k.time as Time, value: k.close }))
     );
 
     if (chartRef.current && !userZoomedRef.current) {
@@ -172,27 +163,20 @@ export default function CryptoChart({ klines, latestKline, currentPrice }: Chart
     }
   }, [klines]);
 
-  // Real-time update — uses smoothClose for the line (animated), raw values for candle body
+  // Real-time smooth update via smoothClose (60fps lerp from hook)
   useEffect(() => {
     if (!candleSeriesRef.current || !lineSeriesRef.current || !latestKline) return;
-    type LWTime = import("lightweight-charts").Time;
+    const t = latestKline.time as Time;
 
-    const t = latestKline.time as unknown as LWTime;
-
-    // Candle updates with raw OHLC (open/high/low are always precise)
     candleSeriesRef.current.update({
       time: t,
       open: latestKline.open,
       high: latestKline.high,
       low: latestKline.low,
-      close: latestKline.smoothClose, // use smooth close so wick animates too
+      close: latestKline.smoothClose,
     });
 
-    // Line uses smoothClose → this is what creates the gliding dot effect
-    lineSeriesRef.current.update({
-      time: t,
-      value: latestKline.smoothClose,
-    });
+    lineSeriesRef.current.update({ time: t, value: latestKline.smoothClose });
   }, [latestKline]);
 
   // Smart Y-axis scaling

@@ -1,7 +1,6 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useRef, useState, useEffect } from "react";
 import { useTradeStream } from "@/hooks/useTradeStream";
 import { useBinanceWebSocket } from "@/hooks/useBinanceWebSocket";
 import NavHeader from "@/components/NavHeader";
@@ -20,27 +19,10 @@ const LineChart = dynamic(() => import("@/components/LineChart"), {
   ),
 });
 
-// Convert klines to {time, value} points (close prices)
-function toLinePoints(klines: { time: number; close: number }[]) {
-  return klines.map((k) => ({ time: k.time, value: k.close }));
-}
-
 export default function LinePage() {
-  const { ticker, klines, status: wsStatus, reconnect } = useBinanceWebSocket();
-  const { smoothPrice, deltas, status: tradeStatus } = useTradeStream();
+  const { ticker, klines, latestKline, status: wsStatus, reconnect } = useBinanceWebSocket();
+  const { deltas, status: tradeStatus } = useTradeStream();
 
-  const nowRef = useRef(Math.floor(Date.now() / 1000));
-  const [currentTime, setCurrentTime] = useState(nowRef.current);
-
-  // Tick current time every second so the dot stays at "now"
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentTime(Math.floor(Date.now() / 1000));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const points = toLinePoints(klines);
   const combinedStatus = tradeStatus === "connected" ? tradeStatus : wsStatus;
 
   return (
@@ -56,18 +38,14 @@ export default function LinePage() {
         <PriceDisplay ticker={ticker} />
       </div>
 
-      {/* Main content: chart + delta column */}
+      {/* Main content */}
       <div className="flex-1 min-h-0 flex overflow-hidden">
-        {/* Chart area */}
+        {/* Chart — takes all remaining space */}
         <div className="flex-1 min-w-0 relative">
-          <LineChart
-            points={points}
-            smoothPrice={smoothPrice}
-            currentTime={currentTime}
-          />
+          <LineChart klines={klines} latestKline={latestKline} />
         </div>
 
-        {/* Delta column — right side */}
+        {/* Delta column — fixed width right panel */}
         <div className="flex-none w-[88px]">
           <DeltaColumn deltas={deltas} />
         </div>
@@ -76,15 +54,17 @@ export default function LinePage() {
       {/* Footer */}
       <footer className="flex-none px-5 py-2 border-t border-border flex items-center justify-between">
         <span className="text-[10px] font-mono text-muted/40">
-          DATA · BINANCE AGG TRADE STREAM · 3-TICK SMOOTHING
+          DATA · BINANCE AGG TRADE · 3-TICK SMOOTHING · scroll: zoom · drag: pan
         </span>
         <span className="text-[10px] font-mono text-muted/40">
-          {new Date(currentTime * 1000).toLocaleTimeString("en-US", {
-            hour: "2-digit",
-            minute: "2-digit",
-            second: "2-digit",
-            hour12: false,
-          })}
+          {latestKline
+            ? new Date(latestKline.time * 1000).toLocaleTimeString("en-US", {
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit",
+                hour12: false,
+              })
+            : "——:——:——"}
         </span>
       </footer>
     </main>

@@ -28,7 +28,7 @@ interface UseTradeStreamReturn {
 const BINANCE_WS_BASE = "wss://stream.binance.com:9443/ws";
 const SYMBOL = "btcusdt";
 // Buffer: accumulate N ticks before committing a smoothed point
-const TICK_BUFFER = 1;
+const TICK_BUFFER = 3;
 
 export function useTradeStream(): UseTradeStreamReturn {
   const [currentPrice, setCurrentPrice] = useState<number | null>(null);
@@ -63,7 +63,7 @@ export function useTradeStream(): UseTradeStreamReturn {
           setSmoothPrice(target);
         } else {
           // Ease factor: how fast we chase the target (0.06 = smooth, 0.12 = snappier)
-          const ease = 0.12;
+          const ease = 0.07;
           const next = current + (target - current) * ease;
           // Stop if close enough
           if (Math.abs(next - target) < 0.001) {
@@ -152,7 +152,7 @@ export function useTradeStream(): UseTradeStreamReturn {
       setStatus("disconnected");
       reconnectTimerRef.current = setTimeout(() => {
         if (mountedRef.current) connect();
-      }, 5000);
+      }, 3000);
     };
   }, [startAnimLoop, stopAnimLoop]);
 
