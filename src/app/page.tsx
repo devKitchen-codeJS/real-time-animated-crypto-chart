@@ -1,18 +1,21 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { useBinanceWebSocket } from "@/hooks/useBinanceWebSocket";
+import PriceDisplay from "@/components/PriceDisplay";
+import NavHeader from "@/components/NavHeader";
 
-// const CryptoChart = dynamic(() => import("@/components/CryptoChart"), {
-//   ssr: false,
-//   loading: () => (
-//     <div className="w-full h-full flex items-center justify-center">
-//       <div className="flex flex-col items-center gap-4">
-//         <div className="w-8 h-8 border border-accent/30 border-t-accent animate-spin rounded-full" />
-//         <span className="text-xs font-mono text-muted tracking-widest">LOADING CHART</span>
-//       </div>
-//     </div>
-//   ),
-// });
+const CryptoChart = dynamic(() => import("@/components/CryptoChart"), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-full flex items-center justify-center">
+      <div className="flex flex-col items-center gap-4">
+        <div className="w-8 h-8 border border-accent/30 border-t-accent animate-spin rounded-full" />
+        <span className="text-xs font-mono text-muted tracking-widest">LOADING CHART</span>
+      </div>
+    </div>
+  ),
+});
 
 export default function Home() {
   const { ticker, klines, latestKline, status, reconnect } = useBinanceWebSocket();
