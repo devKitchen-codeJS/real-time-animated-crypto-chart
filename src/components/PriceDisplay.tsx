@@ -38,7 +38,7 @@ export default function PriceDisplay({ ticker }: PriceDisplayProps) {
       return () => clearTimeout(timeout);
     }
     prevPriceRef.current = ticker?.price ?? null;
-  }, [ticker?.price]);
+  }, [ticker]);
 
   useEffect(() => {
     prevPriceRef.current = ticker?.price ?? null;
