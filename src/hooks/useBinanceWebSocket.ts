@@ -2,9 +2,9 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { TickerData, KlineData, ConnectionStatus } from "@/types";
+import { SymbolInfo, TimeRange } from "@/context/ChartContext";
 
 const BINANCE_WS = "wss://stream.binance.com:9443/stream";
-const SYMBOL = "btcusdt";
 
 export interface SmoothedKline extends KlineData {
   smoothClose: number;
@@ -18,7 +18,10 @@ interface UseBinanceWebSocketReturn {
   reconnect: () => void;
 }
 
-export function useBinanceWebSocket(): UseBinanceWebSocketReturn {
+export function useBinanceWebSocket(
+  symbolInfo: SymbolInfo,
+  timeRange: TimeRange
+): UseBinanceWebSocketReturn {
   const [ticker, setTicker] = useState<TickerData | null>(null);
   const [klines, setKlines] = useState<KlineData[]>([]);
   const [latestKline, setLatestKline] = useState<SmoothedKline | null>(null);
@@ -28,13 +31,11 @@ export function useBinanceWebSocket(): UseBinanceWebSocketReturn {
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
 
-  // Smooth animation refs
   const animRef = useRef<number | null>(null);
   const smoothCloseRef = useRef<number | null>(null);
   const targetCloseRef = useRef<number | null>(null);
   const latestKlineDataRef = useRef<KlineData | null>(null);
 
-  // RAF loop: smoothly interpolate smoothClose → targetClose
   const startAnimLoop = useCallback(() => {
     if (animRef.current) return;
     const loop = () => {
@@ -46,7 +47,6 @@ export function useBinanceWebSocket(): UseBinanceWebSocketReturn {
         if (current === null) {
           next = target;
         } else {
-          // ease factor 0.06 = ~16 frames to close 90% of gap (~270ms at 60fps)
           next = current + (target - current) * 0.06;
           if (Math.abs(next - target) < 0.001) next = target;
         }
@@ -65,10 +65,10 @@ export function useBinanceWebSocket(): UseBinanceWebSocketReturn {
     }
   }, []);
 
-  const fetchHistoricalKlines = useCallback(async () => {
+  const fetchHistoricalKlines = useCallback(async (sym: string, interval: string, limit: number) => {
     try {
       const res = await fetch(
-        "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=200"
+        `https://api.binance.com/api/v3/klines?symbol=${sym}&interval=${interval}&limit=${limit}`
       );
       const data = await res.json();
       const parsed: KlineData[] = (data as unknown[][]).map((k) => ({
@@ -79,26 +79,48 @@ export function useBinanceWebSocket(): UseBinanceWebSocketReturn {
         close: parseFloat(k[4] as string),
         volume: parseFloat(k[5] as string),
       }));
-      if (mountedRef.current) setKlines(parsed);
+      if (mountedRef.current) {
+        setKlines(parsed);
+        smoothCloseRef.current = null;
+        targetCloseRef.current = null;
+        latestKlineDataRef.current = null;
+      }
     } catch (err) {
       console.error("Failed to fetch historical klines:", err);
     }
   }, []);
 
-  const connect = useCallback(() => {
-    if (wsRef.current) wsRef.current.close();
-    setStatus("connecting");
+  const connectRef = useRef<((sym: SymbolInfo, range: TimeRange) => void) | null>(null);
 
-    // kline_1m + aggTrade (fires ~100ms) for smooth candle animation
-    const streams = `${SYMBOL}@ticker/${SYMBOL}@kline_1m/${SYMBOL}@aggTrade`;
+  const connect = useCallback((sym: SymbolInfo, range: TimeRange) => {
+    if (wsRef.current) {
+      wsRef.current.onclose = null;
+      wsRef.current.close();
+    }
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+    stopAnimLoop();
+
+    setStatus("connecting");
+    setTicker(null);
+    setKlines([]);
+    setLatestKline(null);
+    smoothCloseRef.current = null;
+    targetCloseRef.current = null;
+    latestKlineDataRef.current = null;
+
+    const ws_sym = sym.wsSymbol;
+    const streams = `${ws_sym}@ticker/${ws_sym}@kline_${range.interval}/${ws_sym}@aggTrade`;
     const ws = new WebSocket(`${BINANCE_WS}?streams=${streams}`);
     wsRef.current = ws;
 
     ws.onopen = () => {
-      if (mountedRef.current) {
-        setStatus("connected");
-        startAnimLoop();
-      }
+      if (!mountedRef.current) return;
+      setStatus("connected");
+      startAnimLoop();
+      fetchHistoricalKlines(sym.symbol, range.interval, range.limit);
     };
 
     ws.onmessage = (event) => {
@@ -107,7 +129,7 @@ export function useBinanceWebSocket(): UseBinanceWebSocketReturn {
         const msg = JSON.parse(event.data) as { stream: string; data: Record<string, unknown> };
         const { stream, data } = msg;
 
-        if (stream === `${SYMBOL}@ticker`) {
+        if (stream === `${ws_sym}@ticker`) {
           setTicker({
             price: parseFloat(data.c as string),
             priceChange: parseFloat(data.p as string),
@@ -119,15 +141,12 @@ export function useBinanceWebSocket(): UseBinanceWebSocketReturn {
           });
         }
 
-        // aggTrade: update animation target at ~100ms frequency
-        if (stream === `${SYMBOL}@aggTrade`) {
+        if (stream === `${ws_sym}@aggTrade`) {
           const tradePrice = parseFloat(data.p as string);
-          if (!isNaN(tradePrice)) {
-            targetCloseRef.current = tradePrice;
-          }
+          if (!isNaN(tradePrice)) targetCloseRef.current = tradePrice;
         }
 
-        if (stream === `${SYMBOL}@kline_1m`) {
+        if (stream === `${ws_sym}@kline_${range.interval}`) {
           const k = data.k as Record<string, unknown>;
           const kline: KlineData = {
             time: Math.floor((k.t as number) / 1000),
@@ -146,7 +165,6 @@ export function useBinanceWebSocket(): UseBinanceWebSocketReturn {
             if (last.time === kline.time) {
               return [...prev.slice(0, -1), kline];
             } else {
-              // New candle: snap smooth value to new open
               smoothCloseRef.current = kline.open;
               return [...prev, kline];
             }
@@ -166,22 +184,30 @@ export function useBinanceWebSocket(): UseBinanceWebSocketReturn {
       stopAnimLoop();
       setStatus("disconnected");
       reconnectTimerRef.current = setTimeout(() => {
-        if (mountedRef.current) connect();
+        if (mountedRef.current && connectRef.current) connectRef.current(sym, range);
       }, 3000);
     };
-  }, [startAnimLoop, stopAnimLoop]);
+  }, [startAnimLoop, stopAnimLoop, fetchHistoricalKlines]);
+
+  connectRef.current = connect;
 
   useEffect(() => {
     mountedRef.current = true;
-    fetchHistoricalKlines();
-    connect();
+    connect(symbolInfo, timeRange);
     return () => {
       mountedRef.current = false;
       stopAnimLoop();
-      if (wsRef.current) wsRef.current.close();
+      if (wsRef.current) {
+        wsRef.current.onclose = null;
+        wsRef.current.close();
+      }
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
     };
-  }, [connect, fetchHistoricalKlines, stopAnimLoop]);
+  // Re-run only when symbol or interval label changes
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [symbolInfo.symbol, timeRange.label]);
 
-  return { ticker, klines, latestKline, status, reconnect: connect };
+  const reconnect = useCallback(() => connect(symbolInfo, timeRange), [connect, symbolInfo, timeRange]);
+
+  return { ticker, klines, latestKline, status, reconnect };
 }

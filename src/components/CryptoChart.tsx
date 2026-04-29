@@ -40,7 +40,11 @@ function computePriceRange(
   return { min: visMin, max: visMax };
 }
 
-export default function CryptoChart({ klines, latestKline, currentPrice }: ChartProps) {
+export default function CryptoChart({
+  klines,
+  latestKline,
+  currentPrice,
+}: ChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -86,7 +90,11 @@ export default function CryptoChart({ klines, latestKline, currentPrice }: Chart
         timeVisible: true,
         secondsVisible: false,
       },
-      handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true },
+      handleScroll: {
+        mouseWheel: true,
+        pressedMouseMove: true,
+        horzTouchDrag: true,
+      },
       handleScale: { mouseWheel: true, pinch: true },
       width: containerRef.current.clientWidth,
       height: containerRef.current.clientHeight,
@@ -141,7 +149,12 @@ export default function CryptoChart({ klines, latestKline, currentPrice }: Chart
 
   // Load historical data
   useEffect(() => {
-    if (!candleSeriesRef.current || !lineSeriesRef.current || klines.length === 0) return;
+    if (
+      !candleSeriesRef.current ||
+      !lineSeriesRef.current ||
+      klines.length === 0
+    )
+      return;
     const sorted = [...klines].sort((a, b) => a.time - b.time);
 
     candleSeriesRef.current.setData(
@@ -165,7 +178,8 @@ export default function CryptoChart({ klines, latestKline, currentPrice }: Chart
 
   // Real-time smooth update via smoothClose (60fps lerp from hook)
   useEffect(() => {
-    if (!candleSeriesRef.current || !lineSeriesRef.current || !latestKline) return;
+    if (!candleSeriesRef.current || !lineSeriesRef.current || !latestKline)
+      return;
     const t = latestKline.time as Time;
 
     candleSeriesRef.current.update({
@@ -200,12 +214,11 @@ export default function CryptoChart({ klines, latestKline, currentPrice }: Chart
   }, []);
 
   return (
-    <div className="relative w-full h-full">
-      <div ref={containerRef} className="w-full h-full" />
+    <div className='relative w-full h-full'>
+      <div ref={containerRef} className='w-full h-full' />
       <button
         onClick={handleResetZoom}
-        className="absolute bottom-4 right-4 px-3 py-1.5 bg-surface border border-border text-muted hover:text-text hover:border-accent/50 transition-all duration-200 text-xs font-mono rounded-sm"
-      >
+        className='absolute bottom-4 right-4 px-3 py-1.5 bg-surface border border-border text-muted hover:text-text hover:border-accent/50 transition-all duration-200 text-xs font-mono rounded-sm'>
         [ FIT ]
       </button>
     </div>

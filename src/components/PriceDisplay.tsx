@@ -47,19 +47,19 @@ export default function PriceDisplay({ ticker }: PriceDisplayProps) {
   const isPositive = ticker ? ticker.priceChangePercent >= 0 : true;
 
   return (
-    <div className="flex flex-col gap-1">
+    <div className='flex flex-col gap-1'>
       {/* Main price */}
-      <div className="flex items-baseline gap-3">
+      <div className='flex items-baseline gap-3'>
         <span
           ref={priceRef}
-          className="text-3xl font-mono font-bold text-text transition-colors duration-300"
-          style={{ letterSpacing: "-0.02em" }}
-        >
+          className='text-3xl font-mono font-bold text-text transition-colors duration-300'
+          style={{ letterSpacing: "-0.02em" }}>
           {ticker ? `$${fmt(ticker.price, 2)}` : "—"}
         </span>
         <span
-          className={`text-sm font-mono ${isPositive ? "text-green" : "text-red"}`}
-        >
+          className={`text-sm font-mono ${
+            isPositive ? "text-green" : "text-red"
+          }`}>
           {ticker
             ? `${isPositive ? "+" : ""}${fmt(ticker.priceChangePercent, 2)}%`
             : ""}
@@ -67,21 +67,25 @@ export default function PriceDisplay({ ticker }: PriceDisplayProps) {
       </div>
 
       {/* Stats row */}
-      <div className="flex gap-5 text-xs font-mono text-muted">
+      <div className='flex gap-5 text-xs font-mono text-muted'>
         <span>
           24H{" "}
-          <span className="text-green">H {ticker ? `$${fmt(ticker.high24h)}` : "—"}</span>
+          <span className='text-green'>
+            H {ticker ? `$${fmt(ticker.high24h)}` : "—"}
+          </span>
         </span>
         <span>
-          <span className="text-red">L {ticker ? `$${fmt(ticker.low24h)}` : "—"}</span>
+          <span className='text-red'>
+            L {ticker ? `$${fmt(ticker.low24h)}` : "—"}
+          </span>
         </span>
         <span>
           VOL{" "}
-          <span className="text-text/60">
+          <span className='text-text/60'>
             {ticker ? fmtVol(ticker.volume24h) : "—"} BTC
           </span>
         </span>
-        <span className="hidden sm:inline">
+        <span className='hidden sm:inline'>
           CHG{" "}
           <span className={isPositive ? "text-green" : "text-red"}>
             {ticker
