@@ -24,10 +24,11 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang='en' className='dark'>
-      <body
-        className={`${jetbrainsMono.variable} ${syne.variable} antialiased bg-bg text-text`}>
-        <ChartProvider>{children}</ChartProvider>
+    <html lang="en" className="dark">
+      <body className={`${jetbrainsMono.variable} ${syne.variable} antialiased bg-bg text-text`}>
+        <ChartProvider>
+          {children}
+        </ChartProvider>
       </body>
     </html>
   );

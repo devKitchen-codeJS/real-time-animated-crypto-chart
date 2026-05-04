@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { SymbolSelector, TimeRangeSelector } from "@/components/Selectors";
 import { ConnectionStatus } from "@/types";
-import { SymbolSelector, TimeRangeSelector } from "./Selectors";
 
 interface NavProps {
   status: ConnectionStatus;
@@ -62,10 +62,20 @@ export default function NavHeader({
           }`}>
           CANDLES
         </Link>
-        <Link
-          href='/line'
+        {/* <Link
+          href="/line"
           className={`px-2.5 py-1 text-xs font-mono rounded-sm transition-all duration-150 ${
             pathname === "/line"
+              ? "bg-accent/10 text-accent border border-accent/30"
+              : "text-muted hover:text-text border border-transparent"
+          }`}
+        >
+          LINE
+        </Link> */}
+        <Link
+          href='/liveline'
+          className={`px-2.5 py-1 text-xs font-mono rounded-sm transition-all duration-150 ${
+            pathname === "/liveline"
               ? "bg-accent/10 text-accent border border-accent/30"
               : "text-muted hover:text-text border border-transparent"
           }`}>

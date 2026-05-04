@@ -13,23 +13,38 @@ import {
   type ISeriesApi,
   type Time,
 } from "lightweight-charts";
-import { KlineData } from "@/types";
-import { PriceDelta } from "@/hooks/useTradeStream";
-import { SmoothedKline } from "@/hooks/useBinanceWebSocket";
+import { TickPoint, PriceDelta } from "@/hooks/useTickStream";
 
-// ─── Smooth Line Chart ────────────────────────────────────────────────────────
+// ─── LineChart ────────────────────────────────────────────────────────────────
 
 interface LineChartProps {
-  klines: KlineData[];
-  latestKline: SmoothedKline | null;
+  // Весь массив точек: историческая база (kline close) + live aggTrade точки
+  historicalPoints: TickPoint[];
+  // Live точки от aggTrade — каждый тик добавляет новую точку
+  livePoints: TickPoint[];
+  // Плавно анимированная цена от GSAP — двигает живую точку между тиками
+  smoothPrice: number | null;
 }
 
-export default function LineChart({ klines, latestKline }: LineChartProps) {
+export default function LineChart({
+  historicalPoints,
+  livePoints,
+  smoothPrice,
+}: LineChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
-  const lineSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const areaSeriesRef = useRef<ISeriesApi<"Area"> | null>(null);
+
+  // Две серии: одна для истории (kline close), одна для live aggTrade
+  const histLineRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const histAreaRef = useRef<ISeriesApi<"Area"> | null>(null);
+  const liveLineRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const liveAreaRef = useRef<ISeriesApi<"Area"> | null>(null);
+
   const userZoomedRef = useRef(false);
+  // Запоминаем сколько live-точек уже отрисовано чтобы не делать setData каждый тик
+  const lastLiveCountRef = useRef(0);
+
+  // ── Инициализация графика ─────────────────────────────────────────────────
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -68,7 +83,7 @@ export default function LineChart({ klines, latestKline }: LineChartProps) {
       timeScale: {
         borderColor: "#1a1a24",
         timeVisible: true,
-        secondsVisible: false,
+        secondsVisible: true, // показываем секунды — точки плотные
       },
       handleScroll: {
         mouseWheel: true,
@@ -80,10 +95,11 @@ export default function LineChart({ klines, latestKline }: LineChartProps) {
       height: containerRef.current.clientHeight,
     });
 
-    // Area series for gradient fill under the line
-    const areaSeries = chart.addSeries(AreaSeries, {
+    // ── Историческая серия (kline close points) ───────────────────────────
+    // Более приглушённый цвет — это "фон" картины
+    const histArea = chart.addSeries(AreaSeries, {
       lineColor: "transparent",
-      topColor: "rgba(240,185,11,0.12)",
+      topColor: "rgba(240,185,11,0.05)",
       bottomColor: "rgba(240,185,11,0.00)",
       lineWidth: undefined,
       crosshairMarkerVisible: false,
@@ -91,14 +107,33 @@ export default function LineChart({ klines, latestKline }: LineChartProps) {
       priceLineVisible: false,
     });
 
-    // Main animated line series
-    const lineSeries = chart.addSeries(LineSeries, {
-      color: "#f0b90b",
+    const histLine = chart.addSeries(LineSeries, {
+      color: "#f0b90b55", // приглушённое золото для истории
+      lineWidth: 1,
+      crosshairMarkerVisible: false,
+      lastValueVisible: false,
+      priceLineVisible: false,
+    });
+
+    // ── Live серия (aggTrade точки) ───────────────────────────────────────
+    // Яркий цвет — это "живая" часть
+    const liveArea = chart.addSeries(AreaSeries, {
+      lineColor: "transparent",
+      topColor: "rgba(240,185,11,0.14)",
+      bottomColor: "rgba(240,185,11,0.00)",
+      lineWidth: undefined,
+      crosshairMarkerVisible: false,
+      lastValueVisible: false,
+      priceLineVisible: false,
+    });
+
+    const liveLine = chart.addSeries(LineSeries, {
+      color: "#f0b90b", // яркое золото для live
       lineWidth: 2,
       crosshairMarkerVisible: true,
       crosshairMarkerRadius: 6,
       crosshairMarkerBackgroundColor: "#f0b90b",
-      crosshairMarkerBorderColor: "#f0b90b44",
+      crosshairMarkerBorderColor: "#f0b90b55",
       crosshairMarkerBorderWidth: 3,
       lastValueVisible: true,
       priceLineVisible: true,
@@ -112,8 +147,10 @@ export default function LineChart({ klines, latestKline }: LineChartProps) {
     });
 
     chartRef.current = chart;
-    lineSeriesRef.current = lineSeries;
-    areaSeriesRef.current = areaSeries;
+    histLineRef.current = histLine;
+    histAreaRef.current = histArea;
+    liveLineRef.current = liveLine;
+    liveAreaRef.current = liveArea;
 
     const ro = new ResizeObserver(() => {
       if (containerRef.current && chartRef.current) {
@@ -131,31 +168,105 @@ export default function LineChart({ klines, latestKline }: LineChartProps) {
     };
   }, []);
 
-  // Load historical data
-  useEffect(() => {
-    if (!lineSeriesRef.current || !areaSeriesRef.current || klines.length === 0)
-      return;
-    const sorted = [...klines].sort((a, b) => a.time - b.time);
-    const data = sorted.map((k) => ({ time: k.time as Time, value: k.close }));
+  // ── Загрузка исторических данных (kline close) ────────────────────────────
 
-    lineSeriesRef.current.setData(data);
-    areaSeriesRef.current.setData(data);
+  useEffect(() => {
+    if (
+      !histLineRef.current ||
+      !histAreaRef.current ||
+      historicalPoints.length === 0
+    )
+      return;
+
+    console.log(
+      "Loading historical data, points count:",
+      historicalPoints,
+      historicalPoints.length,
+    );
+    const data = historicalPoints.map((p) => ({
+      time: p.time as unknown as Time,
+      value: p.value,
+    }));
+
+    histLineRef.current.setData(data);
+    histAreaRef.current.setData(data);
+
+    // При первой загрузке истории — сбрасываем счётчик live-точек
+    lastLiveCountRef.current = 0;
 
     if (chartRef.current && !userZoomedRef.current) {
       chartRef.current.timeScale().fitContent();
     }
-  }, [klines]);
+  }, [historicalPoints]);
 
-  // Real-time smooth update — smoothClose gives the gliding dot effect
+  // ── Live обновления (aggTrade точки) ─────────────────────────────────────
+  //
+  // Ключевая идея: мы не делаем setData() каждый тик — это дорого.
+  // Вместо этого:
+  // - Если пришла НОВАЯ точка (count увеличился) → update() с новой точкой
+  // - GSAP двигает smoothPrice между тиками
+  // - Мы обновляем последнюю точку плавным значением от GSAP каждый кадр
+
   useEffect(() => {
-    if (!lineSeriesRef.current || !areaSeriesRef.current || !latestKline)
+    if (!liveLineRef.current || !liveAreaRef.current || livePoints.length === 0)
       return;
-    const t = latestKline.time as Time;
-    const v = latestKline.smoothClose;
 
-    lineSeriesRef.current.update({ time: t, value: v });
-    areaSeriesRef.current.update({ time: t, value: v });
-  }, [latestKline]);
+    const newCount = livePoints.length;
+    const prevCount = lastLiveCountRef.current;
+    console.log(
+      "Updating live data, new points count:",
+      newCount,
+      "previous count:",
+      prevCount,
+    );
+    console.log("Live points:", livePoints);
+    if (prevCount === 0) {
+      // Первый раз — загружаем весь массив
+      const data = livePoints.map((p) => ({
+        time: p.time as unknown as Time,
+        value: p.value,
+      }));
+      liveLineRef.current.setData(data);
+      liveAreaRef.current.setData(data);
+    } else if (newCount > prevCount) {
+      // Новые точки добавились — добавляем только их через update()
+      // update() намного дешевле чем setData() — не пересчитывает всю серию
+      for (let i = prevCount; i < newCount; i++) {
+        const p = livePoints[i];
+        const t = p.time as unknown as Time;
+        liveLineRef.current.update({ time: t, value: p.value });
+        liveAreaRef.current.update({ time: t, value: p.value });
+      }
+    }
+
+    lastLiveCountRef.current = newCount;
+  }, [livePoints]);
+
+  // ── GSAP smooth price → обновляем последнюю точку ────────────────────────
+  //
+  // Это срабатывает ~60 раз в секунду пока GSAP анимирует значение.
+  // smoothPrice медленно едет от предыдущей цены к новой.
+  // Мы берём это промежуточное значение и обновляем ПОСЛЕДНЮЮ точку серии.
+  // Визуально: живая точка плавно скользит, не прыгает.
+
+  useEffect(() => {
+    if (
+      !liveLineRef.current ||
+      !liveAreaRef.current ||
+      !smoothPrice ||
+      livePoints.length === 0
+    )
+      return;
+
+    // Берём время последней реальной точки
+    const lastPoint = livePoints[livePoints.length - 1];
+    const t = lastPoint.time as unknown as Time;
+
+    // Обновляем последнюю точку плавным значением
+    // LightweightCharts обновит позицию точки и конец линии
+    liveLineRef.current.update({ time: t, value: smoothPrice });
+    liveAreaRef.current.update({ time: t, value: smoothPrice });
+  }, [smoothPrice, livePoints]);
 
   const handleResetZoom = useCallback(() => {
     if (chartRef.current) {
@@ -167,6 +278,21 @@ export default function LineChart({ klines, latestKline }: LineChartProps) {
   return (
     <div className='relative w-full h-full'>
       <div ref={containerRef} className='w-full h-full' />
+
+      {/* Легенда серий */}
+      <div className='absolute top-3 left-3 flex items-center gap-3 pointer-events-none'>
+        <div className='flex items-center gap-1.5'>
+          <div className='w-6 h-[1px] bg-[#f0b90b55]' />
+          <span className='text-[9px] font-mono text-muted/60'>HISTORY</span>
+        </div>
+        <div className='flex items-center gap-1.5'>
+          <div className='w-6 h-[2px] bg-[#f0b90b]' />
+          <span className='text-[9px] font-mono text-muted/60'>
+            LIVE · AGG TRADE
+          </span>
+        </div>
+      </div>
+
       <button
         onClick={handleResetZoom}
         className='absolute bottom-4 right-4 px-3 py-1.5 bg-surface border border-border text-muted hover:text-text hover:border-accent/50 transition-all duration-200 text-xs font-mono rounded-sm'>
@@ -185,15 +311,15 @@ interface DeltaColumnProps {
 function fmt(n: number): string {
   const abs = Math.abs(n);
   const sign = n > 0 ? "+" : n < 0 ? "-" : " ";
-  if (abs >= 100) return sign + abs.toFixed(0);
-  if (abs >= 10) return sign + abs.toFixed(1);
+  if (abs >= 1000) return sign + abs.toFixed(0);
+  if (abs >= 100) return sign + abs.toFixed(1);
+  if (abs >= 10) return sign + abs.toFixed(2);
   return sign + abs.toFixed(2);
 }
 
 export function DeltaColumn({ deltas }: DeltaColumnProps) {
   return (
     <div className='flex flex-col h-full overflow-hidden border-l border-border bg-surface/30'>
-      {/* Header */}
       <div className='flex-none px-3 py-2 border-b border-border'>
         <div className='text-[10px] font-mono text-muted tracking-widest'>
           Δ PRICE
@@ -203,8 +329,7 @@ export function DeltaColumn({ deltas }: DeltaColumnProps) {
         </div>
       </div>
 
-      {/* List — newest on top */}
-      <div className='flex-1 overflow-hidden relative'>
+      <div className='flex-1 overflow-hidden'>
         {deltas.length === 0 ? (
           <div className='flex items-center justify-center h-full'>
             <span className='text-[10px] font-mono text-muted/30'>
@@ -217,7 +342,6 @@ export function DeltaColumn({ deltas }: DeltaColumnProps) {
               const isUp = d.direction === "up";
               const isDown = d.direction === "down";
               const opacity = Math.max(0.2, 1 - i * 0.022);
-
               return (
                 <div
                   key={d.id}
@@ -250,7 +374,6 @@ export function DeltaColumn({ deltas }: DeltaColumnProps) {
         )}
       </div>
 
-      {/* Bias bar */}
       {deltas.length > 0 && (
         <div className='flex-none border-t border-border px-3 py-2'>
           <div className='text-[9px] font-mono text-muted/40 mb-1.5'>
