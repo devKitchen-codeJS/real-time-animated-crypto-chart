@@ -239,7 +239,7 @@ export function useTickStream(symbolInfo: SymbolInfo): TickStreamReturn {
 
           if (prevDeltaPriceRef.current !== null) {
             const delta = parseFloat(
-              (avg - prevDeltaPriceRef.current).toFixed(4)
+              (avg - prevDeltaPriceRef.current).toFixed(4),
             );
             if (Math.abs(delta) >= 0.0001) {
               setDeltas((prev) =>
@@ -252,7 +252,7 @@ export function useTickStream(symbolInfo: SymbolInfo): TickStreamReturn {
                     direction: getDirection(delta),
                   },
                   ...prev,
-                ].slice(0, 60)
+                ].slice(0, 60),
               );
             }
           }
@@ -278,7 +278,7 @@ export function useTickStream(symbolInfo: SymbolInfo): TickStreamReturn {
         }, 3000);
       };
     },
-    [animateTo]
+    [animateTo],
   );
 
   // Сохраняем актуальную ссылку на connect для авто-реконнекта
@@ -290,12 +290,14 @@ export function useTickStream(symbolInfo: SymbolInfo): TickStreamReturn {
     mountedRef.current = true;
     connect(symbolInfo);
 
+    const animatedNode = animatedRef.current;
+
     return () => {
       // Cleanup при unmount компонента или смене символа:
       mountedRef.current = false;
 
       // Убиваем GSAP — иначе onUpdate будет вызываться после unmount
-      gsap.killTweensOf(animatedRef.current);
+      gsap.killTweensOf(animatedNode);
 
       if (wsRef.current) {
         wsRef.current.onclose = null;
@@ -310,7 +312,7 @@ export function useTickStream(symbolInfo: SymbolInfo): TickStreamReturn {
 
   const reconnect = useCallback(
     () => connect(symbolInfo),
-    [connect, symbolInfo]
+    [connect, symbolInfo],
   );
 
   return { points, smoothPrice, deltas, status, reconnect };

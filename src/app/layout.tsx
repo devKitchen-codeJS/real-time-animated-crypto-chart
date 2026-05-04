@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { JetBrains_Mono, Syne } from "next/font/google";
-import "./globals.css";
 import { ChartProvider } from "@/context/ChartContext";
+import "./globals.css";
 
 const jetbrainsMono = JetBrains_Mono({
   variable: "--font-jetbrains-mono",
@@ -24,11 +24,10 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className="dark">
-      <body className={`${jetbrainsMono.variable} ${syne.variable} antialiased bg-bg text-text`}>
-        <ChartProvider>
-          {children}
-        </ChartProvider>
+    <html lang='en' className='dark'>
+      <body
+        className={`${jetbrainsMono.variable} ${syne.variable} antialiased bg-bg text-text`}>
+        <ChartProvider>{children}</ChartProvider>
       </body>
     </html>
   );
